@@ -43,21 +43,15 @@ func UnmarshalFloat64(data []byte) float64 {
 }
 
 func MarshalString(data string) []byte {
-	payload := []byte(data + "\x00")
+	payload := bytes.Join([][]byte{MarshalUint32(uint32(len(data))), []byte(data)})
 
 	return payload
 }
 
 func UnmarshalString(data []byte) string {
-	end := 0
+	lenData := UnmarshalUint32(data[:4])
 
-	for index, byte := range data {
-		if byte == 0x00 {
-			end = index
-		}
-	}
-
-	return string(data[:end])
+	return string(data[4 : 4+lenData])
 }
 
 func MarshalUint32Array(data []uint32) []byte {
