@@ -10,7 +10,7 @@ type UDPServer struct {
 	ListenAddr string
 	quitch     chan struct{}
 	MsgChannel chan Message
-	ln         net.UDPConn
+	Ln         net.UDPConn
 }
 
 func NewUDPServer(listenAddr string) *UDPServer {
@@ -33,7 +33,7 @@ func (s *UDPServer) Start() error {
 	}
 
 	defer ln.Close()
-	s.ln = *ln
+	s.Ln = *ln
 
 	go s.readIngress(*ln)
 
