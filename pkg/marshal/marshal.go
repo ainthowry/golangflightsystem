@@ -43,7 +43,7 @@ func UnmarshalFloat64(data []byte) float64 {
 }
 
 func MarshalString(data string) []byte {
-	payload := bytes.Join([][]byte{MarshalUint32(uint32(len(data))), []byte(data)})
+	payload := bytes.Join([][]byte{MarshalUint32(uint32(len(data))), []byte(data)}, []byte{})
 
 	return payload
 }
