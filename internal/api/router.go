@@ -110,11 +110,16 @@ func RefundSeatBySeatNumHandler(res_pointer *[]byte, data []byte, fdb *FlightDat
 	id := marshal.UnmarshalUint32(data[:4])
 	seatNum := marshal.UnmarshalUint32(data[4:8])
 
-	seatsLeft, err := fdb.RefundSeatBySeatNum(id, seatNum, user)
+	isRefunded, err := fdb.RefundSeatBySeatNum(id, seatNum, user)
 	if err != nil {
 		log.Printf("[SERVICE ERROR] %v", err)
 	}
 
-	res = bytes.Join([][]byte{res, marshal.MarshalUint32Array(seatsLeft)}, []byte{})
+	if isRefunded {
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(1))}, []byte{})
+	} else {
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(0))}, []byte{})
+	}
+
 	return res
 }

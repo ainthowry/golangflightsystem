@@ -48,22 +48,33 @@ func main() {
 			reqId := marshal.UnmarshalUint32(msg.Payload[:4])
 			req := cache.UserRequest{ReqId: reqId, Sender: msg.Sender}
 			cachedRes, reqExists := resCache[req]
-			resp := make([]byte, 0)
+			resp := []byte{}
 			if reqExists {
 				resp = cachedRes.Response
 			} else {
 				path := marshal.UnmarshalUint32(msg.Payload[4:8])
 				fmt.Println("Intercepted ", msg.Payload)
 				fmt.Printf("[%s] Request #%d for function %d chosen with: %s\n", msg.Sender, reqId, path, msg.Payload)
-				handler, ok := router.Routes[path]
-
-				if !ok {
-					fmt.Println("function cannot be handled")
-					resp = bytes.Join([][]byte{msg.Payload[:4], marshal.MarshalString("BadRequestException\n")}, []byte{})
+				if path == uint32(7) {
+					fmt.Printf("Clearing cache for user %s\n", msg.Sender)
+					//reset cache for the user
+					for userReq, _ := range resCache {
+						if userReq.Sender == msg.Sender {
+							delete(resCache, userReq)
+						}
+					}
+					resp = bytes.Join([][]byte{msg.Payload[:4], marshal.MarshalUint32(uint32(1))}, []byte{})
 				} else {
-					resp_pointer := msg.Payload[:4]
-					resp = handler(&resp_pointer, msg.Payload[8:], db, msg.Sender)
-					resCache[req] = cache.ResponseData{Response: resp}
+					handler, ok := router.Routes[path]
+
+					if !ok {
+						fmt.Println("function cannot be handled")
+						resp = bytes.Join([][]byte{msg.Payload[:4], marshal.MarshalString("BadRequestException\n")}, []byte{})
+					} else {
+						resp_pointer := msg.Payload[:4]
+						resp = handler(&resp_pointer, msg.Payload[8:], db, msg.Sender)
+						resCache[req] = cache.ResponseData{Response: resp}
+					}
 				}
 			}
 			sendAddr, err := net.ResolveUDPAddr("udp", msg.Sender)
@@ -79,4 +90,8 @@ func main() {
 	log.Fatal(newServer.Start())
 
 	shutdown.Gracefully()
+}
+
+func resetCache() {
+
 }
