@@ -297,9 +297,14 @@ func publishToSubscribers(subs []Subscriber, id uint32, numSeats uint32) {
 	for _, sub := range subs {
 		if now.Before(sub.endTime) {
 			sendAddr, _ := net.ResolveUDPAddr("udp", sub.listenAddr)
-			ln, err := net.DialUDP("udp", sendAddr, nil)
-			resp := bytes.Join([][]byte{marshal.MarshalUint32(uint32(8888)), marshal.MarshalUint32(id), marshal.MarshalUint32(numSeats)}, []byte{})
-			ln.WriteToUDP(resp, sendAddr)
+			ln, err := net.DialUDP("udp", sendAddr, nil) //don't care if the user is listening, just send
+			if err != nil {
+				log.Printf("Failed to send to user %s: %v", sub.listenAddr, err)
+			} else {
+				resp := bytes.Join([][]byte{marshal.MarshalUint32(uint32(8888)), marshal.MarshalUint32(id), marshal.MarshalUint32(numSeats)}, []byte{})
+				ln.WriteToUDP(resp, sendAddr)
+			}
+
 		}
 	}
 }

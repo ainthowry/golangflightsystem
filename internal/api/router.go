@@ -29,7 +29,7 @@ func GetFlightsHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, us
 	destination := marshal.UnmarshalString(data[4+len(source):])
 	flights, err := fdb.GetFlights(source, destination)
 	if err != nil {
-		log.Fatal(fmt.Errorf("[SERVICE ERROR] %s", err))
+		log.Printf("[SERVICE ERROR] %v", err)
 	}
 	var flightids []byte
 	count := 0
@@ -51,7 +51,7 @@ func GetFlightByIdHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase,
 	id := marshal.UnmarshalUint32(data[:4])
 	flight, err := fdb.GetFlightById(id)
 	if err != nil {
-		log.Fatal(fmt.Errorf("[SERVICE ERROR] %s", err))
+		log.Printf("[SERVICE ERROR] %v", err)
 	}
 
 	res = bytes.Join([][]byte{res, marshal.MarshalInt64(flight.departureTime.Unix()), marshal.MarshalFloat64(flight.price), marshal.MarshalUint32(flight.seatsLeft)}, []byte{})
@@ -66,7 +66,7 @@ func ReserveFlightHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase,
 
 	seatsReserved, err := fdb.ReserveFlight(id, numSeats, user)
 	if err != nil {
-		log.Fatal(fmt.Errorf("[SERVICE ERROR] %s", err))
+		log.Printf("[SERVICE ERROR] %v", err)
 	}
 
 	res = bytes.Join([][]byte{res, marshal.MarshalUint32Array(seatsReserved)}, []byte{})
@@ -79,12 +79,13 @@ func SubscribeFlightByIdHandler(res_pointer *[]byte, data []byte, fdb *FlightDat
 	id := marshal.UnmarshalUint32(data[:4])
 	endTime := time.Unix(marshal.UnmarshalInt64(data[4:8]), 0)
 
-	flight, err := fdb.SubscribeFlightById(id, endTime, user)
+	_, err := fdb.SubscribeFlightById(id, endTime, user)
 	if err != nil {
-		log.Fatal(fmt.Errorf("[SERVICE ERROR] %s", err))
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(0))}, []byte{})
+		log.Printf("[SERVICE ERROR] %v", err)
 	}
 
-	res = bytes.Join([][]byte{res, marshal.MarshalUint32(flight.id)}, []byte{})
+	res = bytes.Join([][]byte{res, marshal.MarshalUint32(1)}, []byte{})
 	return res
 }
 
@@ -95,7 +96,7 @@ func GetSeatsByIdHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, 
 
 	seatsReserved, err := fdb.GetSeatsById(id, user)
 	if err != nil {
-		log.Fatal(fmt.Errorf("[SERVICE ERROR] %s", err))
+		log.Printf("[SERVICE ERROR] %v", err)
 	}
 
 	res = bytes.Join([][]byte{res, marshal.MarshalUint32Array(seatsReserved)}, []byte{})
@@ -110,7 +111,7 @@ func RefundSeatBySeatNumHandler(res_pointer *[]byte, data []byte, fdb *FlightDat
 
 	seatsLeft, err := fdb.RefundSeatBySeatNum(id, seatNum, user)
 	if err != nil {
-		log.Fatal(fmt.Errorf("[SERVICE ERROR] %s", err))
+		log.Printf("[SERVICE ERROR] %v", err)
 	}
 
 	res = bytes.Join([][]byte{res, marshal.MarshalUint32Array(seatsLeft)}, []byte{})
