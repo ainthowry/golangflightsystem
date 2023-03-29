@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"goflysys/pkg/marshal"
 	"log"
+	"time"
 )
 
 type FlightsRouter struct {
@@ -75,13 +76,43 @@ func ReserveFlightHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase,
 func SubscribeFlightByIdHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, user string) []byte {
 	res := *res_pointer
 
-	id := marshal.UnmarshalUint32((data[:4]))
+	id := marshal.UnmarshalUint32(data[:4])
+	endTime := time.Unix(marshal.UnmarshalInt64(data[4:8]), 0)
 
-	flight, err := fdb.SubscribeFlightById(id, user)
+	flight, err := fdb.SubscribeFlightById(id, endTime, user)
 	if err != nil {
 		log.Fatal(fmt.Errorf("[SERVICE ERROR] %s", err))
 	}
 
 	res = bytes.Join([][]byte{res, marshal.MarshalUint32(flight.id)}, []byte{})
+	return res
+}
+
+func GetSeatsByIdHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, user string) []byte {
+	res := *res_pointer
+
+	id := marshal.UnmarshalUint32(data[:4])
+
+	seatsReserved, err := fdb.GetSeatsById(id, user)
+	if err != nil {
+		log.Fatal(fmt.Errorf("[SERVICE ERROR] %s", err))
+	}
+
+	res = bytes.Join([][]byte{res, marshal.MarshalUint32Array(seatsReserved)}, []byte{})
+	return res
+}
+
+func RefundSeatBySeatNumHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, user string) []byte {
+	res := *res_pointer
+
+	id := marshal.UnmarshalUint32(data[:4])
+	seatNum := marshal.UnmarshalUint32(data[4:8])
+
+	seatsLeft, err := fdb.RefundSeatBySeatNum(id, seatNum, user)
+	if err != nil {
+		log.Fatal(fmt.Errorf("[SERVICE ERROR] %s", err))
+	}
+
+	res = bytes.Join([][]byte{res, marshal.MarshalUint32Array(seatsLeft)}, []byte{})
 	return res
 }

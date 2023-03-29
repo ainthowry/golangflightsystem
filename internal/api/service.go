@@ -1,11 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"goflysys/pkg/marshal"
 	"log"
 	"math/rand"
+	"net"
 	"time"
 
 	"github.com/hashicorp/go-memdb"
@@ -24,6 +27,7 @@ type Flight struct {
 
 type Subscriber struct {
 	listenAddr string
+	endTime    time.Time
 }
 
 type Seat struct {
@@ -154,13 +158,17 @@ func (fdb *FlightDatabase) ReserveFlight(id uint32, numSeats uint32, buyer strin
 		return nil, err
 	}
 
+	go func() {
+		publishToSubscribers(flight.(*Flight).subs, flight.(*Flight).id, flight.(*Flight).seatsLeft)
+	}()
+
 	txn.Commit()
 
 	return seatsReserved, nil
 }
 
-func (fdb *FlightDatabase) SubscribeFlightById(id uint32, subscriber string) (*Flight, error) {
-	newSub := Subscriber{listenAddr: subscriber}
+func (fdb *FlightDatabase) SubscribeFlightById(id uint32, endTime time.Time, subscriber string) (*Flight, error) {
+	newSub := Subscriber{listenAddr: subscriber, endTime: endTime}
 	txn := fdb.db.Txn(true)
 
 	flight, err := txn.First("flights", "id", id)
@@ -192,32 +200,87 @@ func (fdb *FlightDatabase) SubscribeFlightById(id uint32, subscriber string) (*F
 
 	return updatedFlight.(*Flight), nil
 }
+func (fdb *FlightDatabase) GetSeatsById(id uint32, flyer string) ([]uint32, error) {
+	txn := fdb.db.Txn(false)
+	defer txn.Abort()
+
+	raw, err := txn.First("flights", "id", id)
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return nil, errors.New("NotFoundException")
+	}
+
+	flight := raw.(*Flight)
+	seatsReserved := make([]uint32, 0)
+
+	for seatNum, seat := range flight.seats {
+		if seat.buyer == flyer {
+			seatsReserved = append(seatsReserved, seatNum)
+		}
+	}
+
+	return seatsReserved, nil
+}
+
+func (fdb *FlightDatabase) RefundSeatBySeatNum(id uint32, seatNum uint32, flyer string) ([]uint32, error) {
+	txn := fdb.db.Txn(true)
+
+	raw, err := txn.First("flights", "id", id)
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return nil, errors.New("NotFoundException")
+	}
+
+	flight := raw.(*Flight)
+	isRefunded := false
+	seatsReserved := make([]uint32, 0)
+
+	for i, seat := range flight.seats {
+		if !isRefunded && seatNum == i && seat.reserved && seat.buyer == flyer {
+			raw.(*Flight).seats[i] = Seat{reserved: false, buyer: ""}
+			isRefunded = true
+		} else if seat.buyer == flyer {
+			seatsReserved = append(seatsReserved, seatNum)
+		}
+	}
+	if isRefunded {
+		txn.Commit()
+	} else {
+		txn.Abort()
+	}
+
+	return seatsReserved, nil
+}
 
 func boostrapDatabase(db *memdb.MemDB) {
 	txn := db.Txn(true)
 
 	flights := []*Flight{
-		&Flight{id: uint32(1), source: "CDG", destination: "HND", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(2), source: "BKK", destination: "CUN", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(3), source: "FCO", destination: "BCN", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(4), source: "LHR", destination: "SYD", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(5), source: "DXB", destination: "JFK", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(6), source: "HND", destination: "CDG", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(7), source: "CUN", destination: "DXB", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(8), source: "JFK", destination: "LHR", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(9), source: "BCN", destination: "FCO", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(10), source: "SYD", destination: "BKK", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(11), source: "CDG", destination: "JFK", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(12), source: "BKK", destination: "SYD", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(13), source: "FCO", destination: "DXB", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(14), source: "LHR", destination: "BCN", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(15), source: "DXB", destination: "HND", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(16), source: "SYD", destination: "CUN", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(17), source: "JFK", destination: "CDG", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(18), source: "BCN", destination: "LHR", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(19), source: "HND", destination: "BKK", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(20), source: "CUN", destination: "FCO", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
-		&Flight{id: uint32(21), source: "SYD", destination: "BKK", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(900), seats: make(map[uint32]Seat, 900), subs: []Subscriber{}},
+		&Flight{id: uint32(1), source: "CDG", destination: "HND", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(2), source: "BKK", destination: "CUN", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(3), source: "FCO", destination: "BCN", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(4), source: "LHR", destination: "SYD", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(5), source: "DXB", destination: "JFK", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(6), source: "HND", destination: "CDG", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(7), source: "CUN", destination: "DXB", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(8), source: "JFK", destination: "LHR", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(9), source: "BCN", destination: "FCO", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(10), source: "SYD", destination: "BKK", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(11), source: "CDG", destination: "JFK", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(12), source: "BKK", destination: "SYD", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(13), source: "FCO", destination: "DXB", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(14), source: "LHR", destination: "BCN", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(15), source: "DXB", destination: "HND", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(16), source: "SYD", destination: "CUN", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(17), source: "JFK", destination: "CDG", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(18), source: "BCN", destination: "LHR", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(19), source: "HND", destination: "BKK", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(20), source: "CUN", destination: "FCO", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
+		&Flight{id: uint32(21), source: "SYD", destination: "BKK", departureTime: time.Now().Add(time.Duration(rand.Intn(24000)) * time.Hour), price: rand.Float64() * 2000, seatsLeft: uint32(100), seats: make(map[uint32]Seat, 100), subs: []Subscriber{}},
 	}
 
 	for _, f := range flights {
@@ -227,4 +290,16 @@ func boostrapDatabase(db *memdb.MemDB) {
 	}
 
 	txn.Commit()
+}
+
+func publishToSubscribers(subs []Subscriber, id uint32, numSeats uint32) {
+	now := time.Now()
+	for _, sub := range subs {
+		if now.Before(sub.endTime) {
+			sendAddr, _ := net.ResolveUDPAddr("udp", sub.listenAddr)
+			ln, err := net.DialUDP("udp", sendAddr, nil)
+			resp := bytes.Join([][]byte{marshal.MarshalUint32(uint32(8888)), marshal.MarshalUint32(id), marshal.MarshalUint32(numSeats)}, []byte{})
+			ln.WriteToUDP(resp, sendAddr)
+		}
+	}
 }

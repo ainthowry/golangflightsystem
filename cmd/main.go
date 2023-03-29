@@ -34,6 +34,8 @@ func main() {
 	router.HandleFunc(uint32(2), api.GetFlightByIdHandler)
 	router.HandleFunc(uint32(3), api.ReserveFlightHandler)
 	router.HandleFunc(uint32(4), api.SubscribeFlightByIdHandler)
+	router.HandleFunc(uint32(5), api.GetSeatsByIdHandler)
+	router.HandleFunc(uint32(6), api.RefundSeatBySeatNumHandler)
 
 	fmt.Printf("Server started on port %s\n", port)
 
