@@ -8,22 +8,24 @@ import (
 )
 
 type FlightsRouter struct {
-	Routes map[uint32]func(Response []byte, Request []byte, fdb *FlightDatabase, user string)
+	Routes map[uint32]func(Response *[]byte, Request []byte, fdb *FlightDatabase, user string) []byte
 }
 
 func NewFlightsRouter() *FlightsRouter {
 	return &FlightsRouter{
-		Routes: make(map[uint32]func(Response []byte, Request []byte, fdb *FlightDatabase, user string)),
+		Routes: make(map[uint32]func(Response *[]byte, Request []byte, fdb *FlightDatabase, user string) []byte),
 	}
 }
 
-func (r *FlightsRouter) HandleFunc(path uint32, handler func(Response []byte, Request []byte, fdb *FlightDatabase, user string)) {
+func (r *FlightsRouter) HandleFunc(path uint32, handler func(Response *[]byte, Request []byte, fdb *FlightDatabase, user string) []byte) {
 	r.Routes[path] = handler
 }
 
-func GetFlightsHandler(res []byte, data []byte, fdb *FlightDatabase, user string) {
+func GetFlightsHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, user string) []byte {
+	res := *res_pointer
+
 	source := marshal.UnmarshalString(data)
-	destination := marshal.UnmarshalString(data[len(source)-1:])
+	destination := marshal.UnmarshalString(data[4+len(source):])
 	flights, err := fdb.GetFlights(source, destination)
 	if err != nil {
 		log.Fatal(fmt.Errorf("[SERVICE ERROR] %s", err))
@@ -32,13 +34,19 @@ func GetFlightsHandler(res []byte, data []byte, fdb *FlightDatabase, user string
 	count := 0
 	for _, flight := range flights {
 		count++
-		flightids = append(res, marshal.MarshalUint32(flight.id)...)
+		flightids = append(flightids, marshal.MarshalUint32(flight.id)...)
 	}
 
+	fmt.Println("flightids:", flightids)
 	res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(count)), flightids}, []byte{})
+	fmt.Println("processed:", res)
+	return res
+
 }
 
-func GetFlightByIdHandler(res []byte, data []byte, fdb *FlightDatabase, user string) {
+func GetFlightByIdHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, user string) []byte {
+	res := *res_pointer
+
 	id := marshal.UnmarshalUint32(data[:4])
 	flight, err := fdb.GetFlightById(id)
 	if err != nil {
@@ -46,9 +54,12 @@ func GetFlightByIdHandler(res []byte, data []byte, fdb *FlightDatabase, user str
 	}
 
 	res = bytes.Join([][]byte{res, marshal.MarshalInt64(flight.departureTime.Unix()), marshal.MarshalFloat64(flight.price), marshal.MarshalUint32(flight.seatsLeft)}, []byte{})
+	return res
 }
 
-func ReserveFlightHandler(res []byte, data []byte, fdb *FlightDatabase, user string) {
+func ReserveFlightHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, user string) []byte {
+	res := *res_pointer
+
 	id := marshal.UnmarshalUint32(data[:4])
 	numSeats := marshal.UnmarshalUint32(data[4:8])
 
@@ -58,9 +69,12 @@ func ReserveFlightHandler(res []byte, data []byte, fdb *FlightDatabase, user str
 	}
 
 	res = bytes.Join([][]byte{res, marshal.MarshalUint32Array(seatsReserved)}, []byte{})
+	return res
 }
 
-func SubscribeFlightByIdHandler(res []byte, data []byte, fdb *FlightDatabase, user string) {
+func SubscribeFlightByIdHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, user string) []byte {
+	res := *res_pointer
+
 	id := marshal.UnmarshalUint32((data[:4]))
 
 	flight, err := fdb.SubscribeFlightById(id, user)
@@ -69,4 +83,5 @@ func SubscribeFlightByIdHandler(res []byte, data []byte, fdb *FlightDatabase, us
 	}
 
 	res = bytes.Join([][]byte{res, marshal.MarshalUint32(flight.id)}, []byte{})
+	return res
 }

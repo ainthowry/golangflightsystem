@@ -60,7 +60,7 @@ func (s *UDPServer) readIngress(conn net.UDPConn) {
 
 		fmt.Println("New connection received from:", addr)
 
-		_, err = conn.WriteToUDP([]byte("Processing request\n"), addr)
+		// _, err = conn.WriteToUDP([]byte("Processing request\n"), addr)
 		if err != nil {
 			log.Fatal(err)
 			continue

@@ -39,10 +39,10 @@ func main() {
 
 	go func() {
 		for msg := range newServer.MsgChannel {
-			fmt.Printf("[%s] Request for: %s\n", msg.Sender, msg.Payload)
-			// reqId := marshal.UnmarshalUint32(msg.Payload[:4])
+			reqId := marshal.UnmarshalUint32(msg.Payload[:4])
 			path := marshal.UnmarshalUint32(msg.Payload[4:8])
-			fmt.Printf("Function %d chosen \n", path)
+			fmt.Println("Intercepted ", msg.Payload)
+			fmt.Printf("[%s] Request #%d for function %d chosen with: %s\n", msg.Sender, reqId, path, msg.Payload)
 			handler, ok := router.Routes[path]
 			sendAddr, err := net.ResolveUDPAddr("udp", msg.Sender)
 			if err != nil {
@@ -52,11 +52,13 @@ func main() {
 			if !ok {
 				fmt.Println("function cannot be handled")
 				resp := bytes.Join([][]byte{msg.Payload[:4], marshal.MarshalString("BadRequestException\n")}, []byte{})
+				fmt.Println("Sending", resp)
 				newServer.Ln.WriteToUDP(resp, sendAddr)
 			} else {
-				resp := msg.Payload[:4]
-				handler(resp, msg.Payload[8:], db, msg.Sender)
+				resp_pointer := msg.Payload[:4]
+				resp := handler(&resp_pointer, msg.Payload[8:], db, msg.Sender)
 				newServer.Ln.WriteToUDP(resp, sendAddr)
+				fmt.Println("Sending", resp)
 			}
 		}
 	}()
