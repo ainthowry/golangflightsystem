@@ -2,9 +2,10 @@ package api
 
 import (
 	"bytes"
-	"goflysys/pkg/marshal"
 	"log"
 	"time"
+
+	"goflysys/pkg/marshal"
 )
 
 type FlightsRouter struct {

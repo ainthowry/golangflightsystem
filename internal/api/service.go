@@ -5,11 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"goflysys/pkg/marshal"
 	"log"
 	"math/rand"
 	"net"
 	"time"
+
+	"goflysys/pkg/marshal"
 
 	"github.com/hashicorp/go-memdb"
 )
