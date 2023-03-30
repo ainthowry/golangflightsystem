@@ -59,7 +59,7 @@ func main() {
 
 				if !ok {
 					fmt.Println("function cannot be handled")
-					resp = bytes.Join([][]byte{msg.Payload[:4], marshal.MarshalString("BadRequestException\n")}, []byte{})
+					resp = bytes.Join([][]byte{marshal.MarshalUint32(uint32(400)), marshal.MarshalUint32(uint32(400))}, []byte{})
 				} else {
 					resp_pointer := msg.Payload[:4]
 					resp = handler(&resp_pointer, msg.Payload[8:], db, msg.Sender)

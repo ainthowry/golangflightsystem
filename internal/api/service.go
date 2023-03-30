@@ -232,39 +232,58 @@ func (fdb *FlightDatabase) GetSeatsById(id uint32, flyer string) ([]uint32, erro
 	return seatsReserved, nil
 }
 
-func (fdb *FlightDatabase) RefundSeatBySeatNum(id uint32, seatNum uint32, flyer string) (bool, error) {
+func (fdb *FlightDatabase) RefundSeatBySeatNum(id uint32, seatNum uint32, flyer string) ([]uint32, error) {
 	txn := fdb.db.Txn(true)
 
 	raw, err := txn.First("flights", "id", id)
 	if err != nil {
 		txn.Abort()
-		return false, err
+		return nil, err
 	}
 	if raw == nil {
 		txn.Abort()
-		return false, errors.New("NotFoundException")
+		return nil, errors.New("NotFoundException")
 	}
 
 	flightseat, ok := raw.(*Flight).seats[seatNum]
-	if !ok {
+	if !ok || !flightseat.reserved {
 		txn.Abort()
-		return false, errors.New("BadRequestException")
+		return nil, errors.New("BadRequestException")
 	}
 
-	if !flightseat.reserved || flightseat.buyer != flyer {
+	if flightseat.buyer != flyer {
 		txn.Abort()
-		return false, errors.New("UnauthorizedException")
+		return nil, errors.New("UnauthorizedException")
 	}
 
 	raw.(*Flight).seats[seatNum] = Seat{reserved: false, buyer: ""}
 
 	if txn.Insert("flights", raw); err != nil {
-		return false, err
+		return nil, err
 	}
 
 	txn.Commit()
 
-	return true, nil
+	txn = fdb.db.Txn(false)
+	defer txn.Abort()
+
+	raw, err = txn.First("flights", "id", id)
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return nil, errors.New("NotFoundException")
+	}
+
+	flight := raw.(*Flight)
+	seatsReserved := make([]uint32, 0)
+	for seatNum, seat := range flight.seats {
+		if seat.buyer == flyer {
+			seatsReserved = append(seatsReserved, seatNum)
+		}
+	}
+
+	return seatsReserved, nil
 }
 
 func boostrapDatabase(db *memdb.MemDB) {

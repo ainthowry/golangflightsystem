@@ -107,16 +107,16 @@ func SubscribeFlightByIdHandler(res_pointer *[]byte, data []byte, fdb *FlightDat
 	_, err := fdb.SubscribeFlightById(id, endTime, user)
 	if err != nil && err.Error() == "NotFoundException" {
 		log.Println("[SERVICE] Flight given does not exist", err)
-		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(404))}, []byte{})
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(404)), marshal.MarshalBool(false)}, []byte{})
 		return res
 	}
 	if err != nil {
 		log.Printf("[SERVICE ERROR] %v", err)
-		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(400))}, []byte{})
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(400)), marshal.MarshalBool(false)}, []byte{})
 		return res
 	}
 
-	res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(201)), marshal.MarshalUint32(1)}, []byte{})
+	res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(201)), marshal.MarshalBool(true)}, []byte{})
 	return res
 }
 
@@ -147,7 +147,7 @@ func RefundSeatBySeatNumHandler(res_pointer *[]byte, data []byte, fdb *FlightDat
 	id := marshal.UnmarshalUint32(data[:4])
 	seatNum := marshal.UnmarshalUint32(data[4:8])
 
-	isRefunded, err := fdb.RefundSeatBySeatNum(id, seatNum, user)
+	seatsLeft, err := fdb.RefundSeatBySeatNum(id, seatNum, user)
 	if err != nil && err.Error() == "NotFoundException" {
 		log.Println("[SERVICE] Flight given does not exist", err)
 		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(404))}, []byte{})
@@ -164,11 +164,7 @@ func RefundSeatBySeatNumHandler(res_pointer *[]byte, data []byte, fdb *FlightDat
 		return res
 	}
 
-	if isRefunded {
-		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(201)), marshal.MarshalUint32(uint32(1))}, []byte{})
-	} else {
-		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(400)), marshal.MarshalUint32(uint32(0))}, []byte{})
-	}
+	res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(201)), marshal.MarshalUint32Array(seatsLeft)}, []byte{})
 
 	return res
 }

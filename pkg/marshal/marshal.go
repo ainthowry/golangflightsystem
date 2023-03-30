@@ -66,3 +66,10 @@ func MarshalUint32Array(data []uint32) []byte {
 
 	return payload
 }
+
+func MarshalBool(data bool) []byte {
+	if data {
+		return []byte{1}
+	}
+	return []byte{0}
+}
