@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"fmt"
 	"goflysys/pkg/marshal"
 	"log"
 	"time"
@@ -27,10 +26,19 @@ func GetFlightsHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, us
 
 	source := marshal.UnmarshalString(data)
 	destination := marshal.UnmarshalString(data[4+len(source):])
+
 	flights, err := fdb.GetFlights(source, destination)
+	if err != nil && err.Error() == "NotFoundException" {
+		log.Println("[SERVICE] No flights found")
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(404))}, []byte{})
+		return res
+	}
 	if err != nil {
 		log.Printf("[SERVICE ERROR] %v", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(400))}, []byte{})
+		return res
 	}
+
 	var flightids []byte
 	count := 0
 	for _, flight := range flights {
@@ -38,11 +46,8 @@ func GetFlightsHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, us
 		flightids = append(flightids, marshal.MarshalUint32(flight.id)...)
 	}
 
-	fmt.Println("flightids:", flightids)
-	res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(count)), flightids}, []byte{})
-	fmt.Println("processed:", res)
+	res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(200)), marshal.MarshalUint32(uint32(count)), flightids}, []byte{})
 	return res
-
 }
 
 func GetFlightByIdHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, user string) []byte {
@@ -50,11 +55,18 @@ func GetFlightByIdHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase,
 
 	id := marshal.UnmarshalUint32(data[:4])
 	flight, err := fdb.GetFlightById(id)
+	if err != nil && err.Error() == "NotFoundException" {
+		log.Println("[SERVICE] Flight given does not exist", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(404))}, []byte{})
+		return res
+	}
 	if err != nil {
 		log.Printf("[SERVICE ERROR] %v", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(400))}, []byte{})
+		return res
 	}
 
-	res = bytes.Join([][]byte{res, marshal.MarshalInt64(flight.departureTime.Unix()), marshal.MarshalFloat64(flight.price), marshal.MarshalUint32(flight.seatsLeft)}, []byte{})
+	res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(200)), marshal.MarshalInt64(flight.departureTime.Unix()), marshal.MarshalFloat64(flight.price), marshal.MarshalUint32(flight.seatsLeft)}, []byte{})
 	return res
 }
 
@@ -65,12 +77,23 @@ func ReserveFlightHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase,
 	numSeats := marshal.UnmarshalUint32(data[4:8])
 
 	seatsReserved, err := fdb.ReserveFlight(id, numSeats, user)
+	if err != nil && err.Error() == "NotFoundException" {
+		log.Println("[SERVICE] Flight given does not exist", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(404))}, []byte{})
+		return res
+	}
+	if err != nil && err.Error() == "Conflict" {
+		log.Println("[SERVICE] No flights seats available", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(409))}, []byte{})
+		return res
+	}
 	if err != nil {
 		log.Printf("[SERVICE ERROR] %v", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(400))}, []byte{})
+		return res
 	}
 
-	log.Println(seatsReserved)
-	res = bytes.Join([][]byte{res, marshal.MarshalUint32Array(seatsReserved)}, []byte{})
+	res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(201)), marshal.MarshalUint32Array(seatsReserved)}, []byte{})
 	return res
 }
 
@@ -81,12 +104,18 @@ func SubscribeFlightByIdHandler(res_pointer *[]byte, data []byte, fdb *FlightDat
 	endTime := time.Unix(marshal.UnmarshalInt64(data[4:12]), 0)
 
 	_, err := fdb.SubscribeFlightById(id, endTime, user)
+	if err != nil && err.Error() == "NotFoundException" {
+		log.Println("[SERVICE] Flight given does not exist", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(404))}, []byte{})
+		return res
+	}
 	if err != nil {
-		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(0))}, []byte{})
 		log.Printf("[SERVICE ERROR] %v", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(400))}, []byte{})
+		return res
 	}
 
-	res = bytes.Join([][]byte{res, marshal.MarshalUint32(1)}, []byte{})
+	res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(201)), marshal.MarshalUint32(1)}, []byte{})
 	return res
 }
 
@@ -96,11 +125,18 @@ func GetSeatsByIdHandler(res_pointer *[]byte, data []byte, fdb *FlightDatabase, 
 	id := marshal.UnmarshalUint32(data[:4])
 
 	seatsReserved, err := fdb.GetSeatsById(id, user)
+	if err != nil && err.Error() == "NotFoundException" {
+		log.Println("[SERVICE] Flight given does not exist", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(404))}, []byte{})
+		return res
+	}
 	if err != nil {
 		log.Printf("[SERVICE ERROR] %v", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(400))}, []byte{})
+		return res
 	}
 
-	res = bytes.Join([][]byte{res, marshal.MarshalUint32Array(seatsReserved)}, []byte{})
+	res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(200)), marshal.MarshalUint32Array(seatsReserved)}, []byte{})
 	return res
 }
 
@@ -111,14 +147,26 @@ func RefundSeatBySeatNumHandler(res_pointer *[]byte, data []byte, fdb *FlightDat
 	seatNum := marshal.UnmarshalUint32(data[4:8])
 
 	isRefunded, err := fdb.RefundSeatBySeatNum(id, seatNum, user)
+	if err != nil && err.Error() == "NotFoundException" {
+		log.Println("[SERVICE] Flight given does not exist", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(404))}, []byte{})
+		return res
+	}
+	if err != nil && err.Error() == "UnauthorizedException" {
+		log.Println("[SERVICE] User is not the buyer", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(401))}, []byte{})
+		return res
+	}
 	if err != nil {
 		log.Printf("[SERVICE ERROR] %v", err)
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(400))}, []byte{})
+		return res
 	}
 
 	if isRefunded {
-		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(1))}, []byte{})
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(201)), marshal.MarshalUint32(uint32(1))}, []byte{})
 	} else {
-		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(0))}, []byte{})
+		res = bytes.Join([][]byte{res, marshal.MarshalUint32(uint32(400)), marshal.MarshalUint32(uint32(0))}, []byte{})
 	}
 
 	return res

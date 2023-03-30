@@ -104,11 +104,15 @@ func (fdb *FlightDatabase) GetFlights(source string, destination string) ([]*Fli
 	}
 
 	flights := []*Flight{}
+
 	for obj := it.Next(); obj != nil; obj = it.Next() {
 		flight := obj.(*Flight)
 		if flight.source == source && flight.destination == destination {
 			flights = append(flights, flight)
 		}
+	}
+	if len(flights) == 0 {
+		return nil, errors.New("NotFoundException")
 	}
 
 	return flights, nil
@@ -155,13 +159,15 @@ func (fdb *FlightDatabase) ReserveFlight(id uint32, numSeats uint32, buyer strin
 		}
 	}
 
+	if count == 0 {
+		return nil, errors.New("Conflict")
+	}
+
 	if txn.Insert("flights", flight); err != nil {
 		return nil, err
 	}
 
-	go func() {
-		publishToSubscribers(flight.(*Flight).subs, flight.(*Flight).id, flight.(*Flight).seatsLeft)
-	}()
+	go publishToSubscribers(flight.(*Flight).subs, flight.(*Flight).id, flight.(*Flight).seatsLeft)
 
 	txn.Commit()
 
@@ -230,21 +236,29 @@ func (fdb *FlightDatabase) RefundSeatBySeatNum(id uint32, seatNum uint32, flyer 
 
 	raw, err := txn.First("flights", "id", id)
 	if err != nil {
+		txn.Abort()
 		return false, err
 	}
 	if raw == nil {
+		txn.Abort()
 		return false, errors.New("NotFoundException")
 	}
 
 	flightseat, ok := raw.(*Flight).seats[seatNum]
 	if !ok {
 		txn.Abort()
-		return false, nil
+		return false, errors.New("BadRequestException")
 	}
 
 	if !flightseat.reserved || flightseat.buyer != flyer {
 		txn.Abort()
-		return false, nil
+		return false, errors.New("UnauthorizedException")
+	}
+
+	raw.(*Flight).seats[seatNum] = Seat{reserved: false, buyer: ""}
+
+	if txn.Insert("flights", raw); err != nil {
+		return false, err
 	}
 
 	txn.Commit()
@@ -298,13 +312,15 @@ func boostrapDatabase(db *memdb.MemDB) {
 func publishToSubscribers(subs []Subscriber, id uint32, numSeats uint32) {
 	now := time.Now()
 	for _, sub := range subs {
+		log.Printf("EndTime for user %s is: %s", sub.listenAddr, sub.endTime.String())
 		if now.Before(sub.endTime) {
 			sendAddr, _ := net.ResolveUDPAddr("udp", sub.listenAddr)
 			ln, err := net.DialUDP("udp", sendAddr, nil) //don't care if the user is listening, just send
 			if err != nil {
-				log.Printf("Failed to send to user %s: %v", sub.listenAddr, err)
+				log.Printf("Failed to send notification to user %s: %v\n", sub.listenAddr, err)
 			} else {
 				resp := bytes.Join([][]byte{marshal.MarshalUint32(uint32(8888)), marshal.MarshalUint32(id), marshal.MarshalUint32(numSeats)}, []byte{})
+				log.Printf("Sending notification to user %s\n", sub.listenAddr)
 				ln.WriteToUDP(resp, sendAddr)
 			}
 

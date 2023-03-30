@@ -61,7 +61,6 @@ func MarshalUint32Array(data []uint32) []byte {
 	copy(payload[:4], MarshalUint32(uint32(lenData)))
 
 	for i := 0; i < lenData; i++ {
-		log.Println(payload)
 		copy(payload[4+i*4:8+i*4], MarshalUint32(uint32(data[i])))
 	}
 

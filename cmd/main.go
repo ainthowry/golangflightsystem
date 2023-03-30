@@ -48,13 +48,13 @@ func main() {
 			reqId := marshal.UnmarshalUint32(msg.Payload[:4])
 			req := cache.UserRequest{ReqId: reqId, Sender: msg.Sender}
 			cachedRes, reqExists := resCache[req]
-			resp := []byte{}
+			resp := make([]byte, 0)
 			if reqExists {
 				resp = cachedRes.Response
 			} else {
 				path := marshal.UnmarshalUint32(msg.Payload[4:8])
-				fmt.Println("Intercepted ", msg.Payload)
-				fmt.Printf("[%s] Request #%d for function %d chosen with: %s\n", msg.Sender, reqId, path, msg.Payload)
+				fmt.Printf("[%s] Request #%d for function %d chosen with payload: %s\n", msg.Sender, reqId, path, msg.Payload)
+				fmt.Println("Intercepted payload of", msg.Payload)
 				if path == uint32(7) {
 					fmt.Printf("Clearing cache for user %s\n", msg.Sender)
 					//reset cache for the user
@@ -79,8 +79,8 @@ func main() {
 			}
 			sendAddr, err := net.ResolveUDPAddr("udp", msg.Sender)
 			if err != nil {
-				log.Print(err)
-				resp = bytes.Join([][]byte{msg.Payload[:4], marshal.MarshalString("BadRequestException\n")}, []byte{})
+				log.Println(err)
+				resp = bytes.Join([][]byte{msg.Payload[:4], marshal.MarshalUint32(400)}, []byte{})
 			}
 			fmt.Println("Sending", resp)
 			newServer.Ln.WriteToUDP(resp, sendAddr)
