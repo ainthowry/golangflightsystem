@@ -335,15 +335,15 @@ func publishToSubscribers(subs []Subscriber, id uint32, numSeats uint32) {
 		log.Printf("EndTime for user %s is: %s", sub.listenAddr, sub.endTime.String())
 		if now.Before(sub.endTime) {
 			sendAddr, _ := net.ResolveUDPAddr("udp", sub.listenAddr)
-			ln, err := net.DialUDP("udp", sendAddr, nil) //don't care if the user is listening, just send
+			ln, err := net.DialUDP("udp", nil, sendAddr) //don't care if the user is listening, just send
 			if err != nil {
 				log.Printf("Failed to send notification to user %s: %v\n", sub.listenAddr, err)
 			} else {
 				resp := bytes.Join([][]byte{marshal.MarshalUint32(uint32(8888)), marshal.MarshalUint32(id), marshal.MarshalUint32(numSeats)}, []byte{})
 				log.Printf("Sending notification to user %s\n", sub.listenAddr)
-				ln.WriteToUDP(resp, sendAddr)
+				ln.Write(resp)
 			}
-
+			defer ln.Close()
 		}
 	}
 }
